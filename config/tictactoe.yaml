@@ -35,6 +35,7 @@ training:
 mcts:
   simulations: 25  # Reduced for TicTacToe (was 200) - tiny state space doesn't need 200 sims
   max_segments_inference: 1  # Only 1 segment during MCTS inference (was hardcoded to 10)
+  batch_size: 16  # Batch size for GPU evaluation (Phase 2 optimization)
   puct_c: 1.5
   dirichlet_alpha: 0.3  # Lower for smaller action space (9 vs 64)
   dirichlet_epsilon: 0.25

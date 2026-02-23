@@ -98,18 +98,20 @@ class MCTS:
         self.temperature = config['temperature']
         self.temperature_threshold = config['temperature_threshold']
         self.max_segments_inference = config.get('max_segments_inference', 1)  # Default to 1
+        self.batch_size = config.get('batch_size', 16)  # Batch size for GPU evaluation (default: 16)
         self.device = device
 
         # Move model to device
         self.model.to(device)
         self.model.eval()
 
-    def search(self, game, move_num: int = 0) -> np.ndarray:
+    def search(self, game, move_num: int = 0, use_batching: bool = True) -> np.ndarray:
         """Run MCTS from current game state and return visit count distribution.
 
         Args:
             game: Game instance (must implement BaseGame interface)
             move_num: Current move number (for temperature schedule)
+            use_batching: Whether to use batched evaluation (default: True for GPU efficiency)
 
         Returns:
             Policy target as visit count distribution [action_size]
@@ -117,11 +119,14 @@ class MCTS:
         # Create root node
         root = MCTSNode()
 
-        # Run simulations
-        for _ in range(self.simulations):
-            # Copy game state for this simulation
-            sim_game = copy.deepcopy(game)
-            self._simulate(sim_game, root)
+        if use_batching and self.batch_size > 1:
+            # Batched MCTS for GPU efficiency
+            self._search_batched(game, root)
+        else:
+            # Sequential MCTS (original implementation)
+            for _ in range(self.simulations):
+                sim_game = copy.deepcopy(game)
+                self._simulate(sim_game, root)
 
         # Extract policy from visit counts
         policy = self._get_policy_target(root, move_num, game.action_size())
@@ -133,6 +138,99 @@ class MCTS:
         )
 
         return policy
+
+    def _search_batched(self, game, root: MCTSNode):
+        """Run batched MCTS simulations for GPU efficiency.
+
+        Args:
+            game: Game instance
+            root: Root MCTS node
+        """
+        # Collect leaf nodes in batches for parallel evaluation
+        pending_evals = []  # List of (sim_game, node, path) tuples
+
+        sim_count = 0
+        while sim_count < self.simulations:
+            # Collect a batch of leaf nodes
+            batch_size = min(self.batch_size, self.simulations - sim_count)
+
+            for _ in range(batch_size):
+                sim_game = copy.deepcopy(game)
+                node, path = self._select_to_leaf(sim_game, root)
+
+                if sim_game.is_terminal():
+                    # Terminal state: backup immediately with actual outcome
+                    value = sim_game.outcome()
+                    self._backup(path, value)
+                else:
+                    # Non-terminal: collect for batch evaluation
+                    pending_evals.append((sim_game, node, path))
+
+            # Batch evaluate all pending nodes
+            if pending_evals:
+                games_to_eval = [item[0] for item in pending_evals]
+                eval_results = self._evaluate_batch(games_to_eval)
+
+                # Expand and backup each node
+                for (sim_game, node, path), (policy_logits, value_logits) in zip(pending_evals, eval_results):
+                    # Convert value logits to expected value
+                    value_probs = torch.softmax(value_logits, dim=0)
+                    value = float(value_probs[0] * 1.0 + value_probs[1] * 0.0 + value_probs[2] * (-1.0))
+
+                    # Expand node
+                    legal_moves = sim_game.legal_moves()
+                    policy_probs = torch.softmax(policy_logits, dim=0).cpu().numpy()
+
+                    # Add Dirichlet noise at root
+                    if node == root or (path and path[0][0] == root):
+                        policy_probs = self._add_dirichlet_noise(policy_probs, legal_moves)
+
+                    node.expand(legal_moves, policy_probs)
+
+                    # Backup
+                    self._backup(path, value)
+
+                pending_evals.clear()
+
+            sim_count += batch_size
+
+    def _select_to_leaf(self, game, root: MCTSNode) -> tuple:
+        """Select actions down the tree until reaching a leaf node.
+
+        Args:
+            game: Game instance (will be modified)
+            root: Root node
+
+        Returns:
+            Tuple of (leaf_node, path) where path is list of (node, action) pairs
+        """
+        node = root
+        path = []
+
+        # Walk tree using PUCT until we reach a leaf
+        while not node.is_leaf() and not game.is_terminal():
+            action = self._select_action_puct(node, game.legal_moves())
+            path.append((node, action))
+
+            # Make move and descend
+            game.make_move(action)
+            node = node.children[action]
+
+        return node, path
+
+    def _backup(self, path: List[tuple], value: float):
+        """Backup value up the tree.
+
+        Args:
+            path: List of (node, action) pairs from root to leaf
+            value: Value to backup (from leaf's perspective)
+        """
+        # Value flips sign at each level (zero-sum game)
+        for parent_node, action in reversed(path):
+            child = parent_node.children[action]
+            child.visit_count += 1
+            child.total_value += value
+            value = -value  # Flip for parent's perspective
 
     def _simulate(self, game, node: MCTSNode):
         """Run one MCTS simulation: select → expand → backup.
@@ -328,3 +426,36 @@ class MCTS:
         value_logits = value_logits.squeeze(0)    # [3]
 
         return policy_logits, value_logits
+
+    @torch.no_grad()
+    def _evaluate_batch(self, games: List) -> List[tuple]:
+        """Evaluate multiple game positions in a batch (GPU-optimized).
+
+        Args:
+            games: List of Game instances
+
+        Returns:
+            List of (policy_logits, value_logits) tuples
+        """
+        if not games:
+            return []
+
+        # Convert all game states to tokens
+        tokens_list = [game.to_tokens() for game in games]  # List of [seq_len]
+
+        # Stack into batch
+        tokens_batch = torch.stack(tokens_list).to(self.device)  # [batch_size, seq_len]
+
+        # Get model predictions for entire batch
+        policy_logits_batch, value_logits_batch, _ = self.model.predict(
+            tokens_batch, use_act=True, max_segments=self.max_segments_inference
+        )
+
+        # Split batch results into individual predictions
+        results = []
+        for i in range(len(games)):
+            policy_logits = policy_logits_batch[i]  # [action_size]
+            value_logits = value_logits_batch[i]    # [3]
+            results.append((policy_logits, value_logits))
+
+        return results

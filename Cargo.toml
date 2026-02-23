@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+
+# Placeholder workspace for future Rust crates
+# Phase 2+: tako-hex-core (Hex game logic + PyO3 bindings)
+# Phase 3+: tako-chess-core (Chess game logic + PyO3 bindings)
+# Phase 4+: tako-worker (Rust self-play worker with zmq IPC)
+members = []
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["zfdupont"]
+
+[workspace.dependencies]
+# Common dependencies for future crates will go here

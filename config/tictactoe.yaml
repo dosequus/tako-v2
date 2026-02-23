@@ -1,0 +1,62 @@
+# TicTacToe Configuration for Tako HRM
+
+# Game selection
+game: "tictactoe"  # Options: "tictactoe", "othello", "hex", "chess"
+
+model:
+  d_model: 128  # Reduced for TicTacToe simplicity (was 256)
+  n_layers: 2  # Per module (4 total: 2 in L-module + 2 in H-module) (was 4)
+  n_heads: 4  # Reduced (was 8)
+  d_ff: 512  # Reduced (was 1024)
+  N: 1  # cycles per segment (was 4) - TicTacToe needs minimal depth
+  T: 4  # steps per cycle
+  vocab_size: 128  # TicTacToe: 5 token types (0,1,2,3,4)
+  action_size: 9  # 9 board positions
+
+training:
+  batch_size: 512
+  learning_rate: 0.0002
+  lr_schedule: cosine
+  lr_min: 0.00002
+  max_segments: 2  # Maximum segments during training (was 10) - TicTacToe needs minimal iterative refinement
+  n_supervision: 2  # Number of segments for deep supervision (was 5)
+  act_epsilon: 0.15  # Probability of forcing M_min >= 2
+
+  # Optimizer
+  optimizer: adam
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+  # Loss weights
+  policy_weight: 1.0  # α
+  value_weight: 1.0   # β
+  act_weight: 0.1     # γ
+
+mcts:
+  simulations: 25  # Reduced for TicTacToe (was 200) - tiny state space doesn't need 200 sims
+  max_segments_inference: 1  # Only 1 segment during MCTS inference (was hardcoded to 10)
+  puct_c: 1.5
+  dirichlet_alpha: 0.3  # Lower for smaller action space (9 vs 64)
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 5  # Lower for shorter games (was 10)
+
+selfplay:
+  num_workers: 8
+  games_per_worker: 100
+  replay_buffer_size: 500000  # Smaller buffer for simpler game
+  min_buffer_size: 5000  # Start training after this many positions
+
+  # Opponent pool
+  opponent_pool_size: 20
+  recent_weight: 0.7  # 70% recent, 30% older checkpoints
+
+evaluation:
+  games: 100
+  mcts_sims: 400  # More sims for evaluation
+  win_rate_threshold: 0.55  # Accept new checkpoint if > 55% win rate
+
+checkpointing:
+  save_interval: 500  # Learner steps (more frequent for faster game)
+  keep_checkpoints: 10
+  checkpoint_dir: "checkpoints/tictactoe"

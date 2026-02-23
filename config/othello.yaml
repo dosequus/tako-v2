@@ -1,0 +1,61 @@
+# Othello Configuration for Tako HRM
+
+# Game selection
+game: "othello"  # Options: "tictactoe", "othello", "hex", "chess"
+
+model:
+  d_model: 512
+  n_layers: 4  # Per module (8 total: 4 in L-module + 4 in H-module)
+  n_heads: 8
+  d_ff: 2048
+  N: 4  # cycles per segment
+  T: 4  # steps per cycle
+  vocab_size: 128  # Othello: 64 positions * 2 players + special tokens
+  action_size: 65  # 64 board positions + pass
+
+training:
+  batch_size: 512
+  learning_rate: 0.0002
+  lr_schedule: cosine
+  lr_min: 0.00002
+  max_segments: 10  # Maximum segments during training
+  n_supervision: 5  # Number of segments for deep supervision
+  act_epsilon: 0.15  # Probability of forcing M_min >= 2
+
+  # Optimizer
+  optimizer: adam
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+  # Loss weights
+  policy_weight: 1.0  # α
+  value_weight: 1.0   # β
+  act_weight: 0.1     # γ
+
+mcts:
+  simulations: 400
+  puct_c: 1.5
+  dirichlet_alpha: 1.0
+  dirichlet_epsilon: 0.25
+  temperature: 1.0
+  temperature_threshold: 30  # Move number after which temp → 0
+
+selfplay:
+  num_workers: 8
+  games_per_worker: 100
+  replay_buffer_size: 1000000  # 1M positions
+  min_buffer_size: 10000  # Start training after this many positions
+
+  # Opponent pool
+  opponent_pool_size: 20
+  recent_weight: 0.7  # 70% recent, 30% older checkpoints
+
+evaluation:
+  games: 100
+  mcts_sims: 800  # More sims for evaluation
+  win_rate_threshold: 0.55  # Accept new checkpoint if > 55% win rate
+
+checkpointing:
+  save_interval: 1000  # Learner steps
+  keep_checkpoints: 10
+  checkpoint_dir: "checkpoints/othello"

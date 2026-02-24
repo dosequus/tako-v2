@@ -138,24 +138,44 @@ def main():
         if device_type == 'cuda':
             # Distribute workers across available GPUs
             worker_device = f'cuda:{i % num_gpus}'
+            # Request fractional GPU for each worker (allows multiple workers per GPU)
+            # For example: 8 workers with 1 GPU → each worker gets 0.125 GPU
+            gpu_fraction = num_gpus / num_workers
         elif device_type == 'mps':
             # All workers share the MPS device
             worker_device = 'mps'
+            gpu_fraction = 0
         else:
             # CPU fallback
             worker_device = 'cpu'
+            gpu_fraction = 0
 
-        worker = SelfPlayWorker.remote(
-            worker_id=i,
-            game_class=game_class,
-            model_config=config['model'],
-            mcts_config=config['mcts'],
-            opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
-            device=worker_device
-        )
+        # Create worker with appropriate GPU resource allocation
+        if device_type == 'cuda' and gpu_fraction > 0:
+            worker = SelfPlayWorker.options(num_gpus=gpu_fraction).remote(
+                worker_id=i,
+                game_class=game_class,
+                model_config=config['model'],
+                mcts_config=config['mcts'],
+                opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
+                device=worker_device
+            )
+        else:
+            worker = SelfPlayWorker.remote(
+                worker_id=i,
+                game_class=game_class,
+                model_config=config['model'],
+                mcts_config=config['mcts'],
+                opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
+                device=worker_device
+            )
         workers.append(worker)
 
-    print(f"[Train] Workers created on {device_type} device(s)")
+    if device_type == 'cuda':
+        print(f"[Train] Workers created on {device_type} device(s)")
+        print(f"[Train]   Each worker allocated {gpu_fraction:.3f} GPU ({num_workers} workers sharing {num_gpus} GPU(s))")
+    else:
+        print(f"[Train] Workers created on {device_type} device(s)")
 
     # Bootstrap phase: collect initial data
     print(f"[Train] Bootstrap phase: Collecting {replay_buffer.min_size} positions...")

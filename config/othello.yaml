@@ -39,6 +39,8 @@ mcts:
   dirichlet_epsilon: 0.25
   temperature: 1.0
   temperature_threshold: 30  # Move number after which temp → 0
+  batch_size: 16  # Batch size for GPU evaluation (increase for better GPU utilization)
+  max_segments_inference: 1  # Number of segments during inference (1 for speed)
 
 selfplay:
   num_workers: 8

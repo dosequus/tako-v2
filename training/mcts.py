@@ -72,7 +72,9 @@ class MCTS:
         model,
         game_class,
         config: Dict,
-        device: str = 'cpu'
+        device: str = 'cpu',
+        dtype: Optional[torch.dtype] = None,
+        use_compile: bool = False
     ):
         """Initialize MCTS.
 
@@ -88,6 +90,8 @@ class MCTS:
                 - temperature_threshold: Move number after which temp → 0
                 - max_segments_inference: Max segments during inference (default: 1)
             device: Device for model inference ('cpu' or 'cuda')
+            dtype: Optional dtype for mixed precision (e.g., torch.bfloat16)
+            use_compile: Whether to use torch.compile for speedup (default: False)
         """
         self.model = model
         self.game_class = game_class
@@ -104,6 +108,10 @@ class MCTS:
         # Move model to device
         self.model.to(device)
         self.model.eval()
+
+        # Apply optimizations if requested
+        if dtype is not None or use_compile:
+            self.model.optimize_for_inference(use_compile=use_compile, dtype=dtype)
 
     def search(self, game, move_num: int = 0, use_batching: bool = True) -> np.ndarray:
         """Run MCTS from current game state and return visit count distribution.

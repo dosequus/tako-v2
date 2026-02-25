@@ -96,6 +96,33 @@ class HRM(nn.Module):
         self.register_buffer("z_H_init", z_H_init, persistent=True)
         self.register_buffer("z_L_init", z_L_init, persistent=True)
 
+    def optimize_for_inference(self, use_compile: bool = True, dtype: torch.dtype = torch.bfloat16) -> 'HRM':
+        """Optimize model for inference with torch.compile and mixed precision.
+
+        Args:
+            use_compile: Whether to use torch.compile (default: True)
+            dtype: Target dtype for mixed precision (default: bfloat16)
+
+        Returns:
+            Self (for chaining)
+        """
+        # Convert to target dtype
+        if dtype is not None:
+            self.to(dtype=dtype)
+            print(f"✅ Model converted to {dtype}")
+
+        # Apply torch.compile if available and requested
+        if use_compile and hasattr(torch, 'compile'):
+            # Note: We compile the forward method, not the entire module
+            # This gives better control and avoids issues with dynamic behavior
+            try:
+                self.forward = torch.compile(self.forward, mode='reduce-overhead')
+                print("✅ torch.compile enabled (mode='reduce-overhead')")
+            except Exception as e:
+                print(f"⚠️  torch.compile failed: {e}")
+
+        return self
+
     def _get_initial_states(self, batch_size: int, seq_len: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Get initial hidden states for given batch size and sequence length.
 
@@ -117,7 +144,8 @@ class HRM(nn.Module):
         x: torch.Tensor,
         z: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         n_cycles: Optional[int] = None,
-        t_steps: Optional[int] = None
+        t_steps: Optional[int] = None,
+        inference_mode: bool = False
     ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor]:
         """Forward pass with 1-step gradient approximation.
 
@@ -130,6 +158,7 @@ class HRM(nn.Module):
             z: Optional initial states (z_H, z_L). If None, uses fixed init.
             n_cycles: Number of cycles (default: self.N)
             t_steps: Timesteps per cycle (default: self.T)
+            inference_mode: If True, skip gradient computation entirely (default: False)
 
         Returns:
             Tuple of:
@@ -153,21 +182,35 @@ class HRM(nn.Module):
         # Total timesteps
         total_steps = N * T
 
-        # Run N×T-1 steps without gradients
-        with torch.no_grad():
-            for step in range(total_steps - 1):
+        # In inference mode or when gradients are disabled, run all steps without gradients
+        # In training mode, use 1-step gradient approximation
+        grad_enabled = torch.is_grad_enabled() and not inference_mode
+
+        if grad_enabled:
+            # Training mode: N×T-1 steps without gradients
+            with torch.no_grad():
+                for step in range(total_steps - 1):
+                    # L-module updates every step
+                    z_L = self.L_module(z_L, z_H, x_emb)
+
+                    # H-module updates every T steps
+                    if (step + 1) % T == 0:
+                        z_H = self.H_module(z_H, z_L)
+
+            # Final step WITH gradients (1-step gradient approximation)
+            z_L = self.L_module(z_L, z_H, x_emb)
+            # Check if final step is an H-update
+            if total_steps % T == 0:
+                z_H = self.H_module(z_H, z_L)
+        else:
+            # Inference mode: all steps without gradients
+            for step in range(total_steps):
                 # L-module updates every step
                 z_L = self.L_module(z_L, z_H, x_emb)
 
                 # H-module updates every T steps
                 if (step + 1) % T == 0:
                     z_H = self.H_module(z_H, z_L)
-
-        # Final step WITH gradients (1-step gradient approximation)
-        z_L = self.L_module(z_L, z_H, x_emb)
-        # Check if final step is an H-update
-        if total_steps % T == 0:
-            z_H = self.H_module(z_H, z_L)
 
         # Generate outputs from final z_H
         policy = self.policy_head(z_H)
@@ -216,8 +259,8 @@ class HRM(nn.Module):
         for seg in range(max_segments):
             num_segments += 1
 
-            # Run one segment
-            (z_H, z_L), policy, value = self.forward(x, z=(z_H, z_L))
+            # Run one segment (inference_mode=True to skip gradient computation)
+            (z_H, z_L), policy, value = self.forward(x, z=(z_H, z_L), inference_mode=True)
 
             # Check ACT halting condition
             if use_act and num_segments >= effective_min_segments:

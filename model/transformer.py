@@ -6,6 +6,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Tuple
 
+# Enable FlashAttention if available
+_flash_attn_enabled = False
+try:
+    if hasattr(torch.backends.cuda, 'enable_flash_sdp'):
+        torch.backends.cuda.enable_flash_sdp(True)
+        _flash_attn_enabled = True
+        print("✅ FlashAttention (SDPA) enabled")
+except Exception as e:
+    print(f"⚠️  FlashAttention not available: {e}")
+    _flash_attn_enabled = False
+
 
 class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization.

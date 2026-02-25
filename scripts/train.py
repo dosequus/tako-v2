@@ -1,6 +1,7 @@
 """Main training script for Tako Phase 1: Othello self-play."""
 
 import argparse
+import os
 import yaml
 import ray
 import torch
@@ -150,32 +151,30 @@ def main():
             worker_device = 'cpu'
             gpu_fraction = 0
 
-        # Create worker with appropriate GPU resource allocation
+        # Create worker with appropriate resource allocation.
+        # Distribute both GPU and CPU fractions evenly so Ray never gates
+        # scheduling on whole-resource availability (important when num_workers
+        # exceeds the physical CPU count, e.g. on Colab with 2 CPUs).
+        worker_kwargs = dict(
+            worker_id=i,
+            game_class=game_class,
+            model_config=config['model'],
+            mcts_config=config['mcts'],
+            opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
+            device=worker_device
+        )
+        cpu_fraction = (os.cpu_count() or 1) / num_workers
+        options = {'num_cpus': cpu_fraction}
         if device_type == 'cuda' and gpu_fraction > 0:
-            worker = SelfPlayWorker.options(num_gpus=gpu_fraction).remote(
-                worker_id=i,
-                game_class=game_class,
-                model_config=config['model'],
-                mcts_config=config['mcts'],
-                opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
-                device=worker_device
-            )
-        else:
-            worker = SelfPlayWorker.remote(
-                worker_id=i,
-                game_class=game_class,
-                model_config=config['model'],
-                mcts_config=config['mcts'],
-                opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
-                device=worker_device
-            )
+            options['num_gpus'] = gpu_fraction
+        worker = SelfPlayWorker.options(**options).remote(**worker_kwargs)
         workers.append(worker)
 
+    cpu_fraction = (os.cpu_count() or 1) / num_workers
+    print(f"[Train] Workers created on {device_type} device(s)")
+    print(f"[Train]   Each worker allocated {cpu_fraction:.3f} CPU ({num_workers} workers sharing {os.cpu_count()} cores)")
     if device_type == 'cuda':
-        print(f"[Train] Workers created on {device_type} device(s)")
         print(f"[Train]   Each worker allocated {gpu_fraction:.3f} GPU ({num_workers} workers sharing {num_gpus} GPU(s))")
-    else:
-        print(f"[Train] Workers created on {device_type} device(s)")
 
     # Bootstrap phase: collect initial data
     print(f"[Train] Bootstrap phase: Collecting {replay_buffer.min_size} positions...")

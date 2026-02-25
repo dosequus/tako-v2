@@ -52,7 +52,7 @@ class Learner:
 
         # Checkpointing config
         ckpt_cfg = config['checkpointing']
-        self.checkpoint_dir = Path(ckpt_cfg['checkpoint_dir'])
+        self.checkpoint_dir = Path(ckpt_cfg['checkpoint_dir']).resolve()
         self.save_interval = ckpt_cfg['save_interval']
         self.keep_checkpoints = ckpt_cfg['keep_checkpoints']
 

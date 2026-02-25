@@ -6,23 +6,13 @@ import numpy as np
 import random
 import logging
 import sys
+import os
 from typing import List, Dict, Tuple
 import copy
 
 from training.mcts import MCTS
 
 # Configure logging for Ray workers
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Add handler to output to stdout (required for Ray log_to_driver)
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s',
-                                 datefmt='%H:%M:%S')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
 
 @ray.remote
@@ -78,7 +68,14 @@ class SelfPlayWorker:
         self.current_checkpoint_step = 0
 
         # Log initialization
-        logger.info(f"Worker {self.worker_id}: Initialized on {device} with {game_class.__name__}")
+        
+        logging.basicConfig(level=logging.INFO)
+        self.log(f"Worker {self.worker_id}: Initialized on {device} with {game_class.__name__}")
+
+    
+    def log(self, msg):
+        logger = logging.getLogger(__name__)
+        logger.info(msg)
 
     def load_checkpoint(self, checkpoint_path: str, step: int):
         """Load model weights from checkpoint.
@@ -90,7 +87,7 @@ class SelfPlayWorker:
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.current_checkpoint_step = step
-        logger.info(f"Worker {self.worker_id}: Loaded checkpoint step {step}")
+        self.log(f"Worker {self.worker_id}: Loaded checkpoint step {step}")
 
     def update_opponent_pool(self, checkpoints: List[Tuple[str, int]]):
         """Update opponent pool with latest checkpoints.
@@ -99,7 +96,7 @@ class SelfPlayWorker:
             checkpoints: List of (checkpoint_path, step) tuples
         """
         self.opponent_checkpoints = checkpoints.copy()
-        logger.info(f"Worker {self.worker_id}: Opponent pool updated ({len(checkpoints)} checkpoints)")
+        self.log(f"Worker {self.worker_id}: Opponent pool updated ({len(checkpoints)} checkpoints)")
 
     def generate_game(self) -> List[Dict]:
         """Generate one self-play game and return training samples.
@@ -127,12 +124,12 @@ class SelfPlayWorker:
         # Randomly assign current model to player 1 or 2
         current_model_player = random.choice([1, 2])
 
-        logger.info(
-            f"Worker {self.worker_id}: Starting game "
-            f"(current_step={self.current_checkpoint_step}, "
-            f"opponent_step={opponent_step if opponent_step else 'self'}, "
-            f"playing_as={'P1' if current_model_player == 1 else 'P2'})"
-        )
+        # self.log(
+        #     f"Worker {self.worker_id}: Starting game "
+        #     f"(current_step={self.current_checkpoint_step}, "
+        #     f"opponent_step={opponent_step if opponent_step else 'self'}, "
+        #     f"playing_as={'P1' if current_model_player == 1 else 'P2'})"
+        # )
 
         # Collect samples for this game
         samples = []
@@ -169,13 +166,6 @@ class SelfPlayWorker:
                 # Argmax (deterministic)
                 action = np.argmax(policy)
 
-            # Log move periodically
-            if move_num % 10 == 0:
-                logger.debug(
-                    f"Worker {self.worker_id}: Move {move_num}, "
-                    f"player={game.current_player}, action={action}"
-                )
-
             # Make move
             game.make_move(action)
             move_num += 1
@@ -201,10 +191,10 @@ class SelfPlayWorker:
 
         # Log game result
         outcome_str = {1.0: "WIN", 0.0: "DRAW", -1.0: "LOSS"}[final_outcome]
-        logger.info(
-            f"Worker {self.worker_id}: Game complete - {outcome_str} "
-            f"({move_num} moves, {len(samples)} samples)"
-        )
+        # self.log(
+        #     f"Worker {self.worker_id}: Game complete - {outcome_str} "
+        #     f"({move_num} moves, {len(samples)} samples)"
+        # )
 
         return samples
 
@@ -217,7 +207,7 @@ class SelfPlayWorker:
         Returns:
             List of all samples from all games
         """
-        logger.info(f"Worker {self.worker_id}: Generating batch of {num_games} games...")
+        self.log(f"Worker {self.worker_id}: Generating batch of {num_games} games...")
         all_samples = []
 
         for game_idx in range(num_games):
@@ -226,65 +216,109 @@ class SelfPlayWorker:
 
             # Log progress every 10 games
             if (game_idx + 1) % 10 == 0:
-                logger.info(
+                self.log(
                     f"Worker {self.worker_id}: Generated {game_idx + 1}/{num_games} games "
                     f"({len(all_samples)} samples so far)"
                 )
 
-        logger.info(
+        self.log(
             f"Worker {self.worker_id}: Batch complete - {num_games} games, "
             f"{len(all_samples)} samples"
         )
         return all_samples
 
     def _sample_opponent(self):
-        """Sample an opponent from the checkpoint pool.
+        """Sample an opponent from the checkpoint pool with retry logic.
+
+        Handles race conditions where checkpoint files may be deleted or
+        partially written during load attempts.
 
         Returns:
-            MCTS instance with opponent model loaded
+            MCTS instance with opponent model loaded, or None if all retries fail
         """
         if not self.opponent_checkpoints:
             return None
 
-        # Determine pool split point
-        n_total = len(self.opponent_checkpoints)
-        n_recent = max(1, int(n_total * 0.3))  # Top 30% are "recent"
+        max_retries = 3
 
-        # Sample: 70% from recent, 30% from older
-        if random.random() < self.recent_weight:
-            # Sample from recent
-            checkpoint_path, step = random.choice(self.opponent_checkpoints[-n_recent:])
-            pool_type = "recent"
-        else:
-            # Sample from older (if available)
-            if n_total > n_recent:
-                checkpoint_path, step = random.choice(self.opponent_checkpoints[:-n_recent])
-                pool_type = "older"
-            else:
-                checkpoint_path, step = random.choice(self.opponent_checkpoints)
-                pool_type = "recent"
+        for attempt in range(max_retries):
+            try:
+                # Determine pool split point
+                n_total = len(self.opponent_checkpoints)
+                n_recent = max(1, int(n_total * 0.3))  # Top 30% are "recent"
 
-        # Store for logging
-        self._last_opponent_step = step
+                # Sample: 70% from recent, 30% from older
+                if random.random() < self.recent_weight:
+                    # Sample from recent
+                    checkpoint_path, step = random.choice(self.opponent_checkpoints[-n_recent:])
+                    pool_type = "recent"
+                else:
+                    # Sample from older (if available)
+                    if n_total > n_recent:
+                        checkpoint_path, step = random.choice(self.opponent_checkpoints[:-n_recent])
+                        pool_type = "older"
+                    else:
+                        checkpoint_path, step = random.choice(self.opponent_checkpoints)
+                        pool_type = "recent"
 
-        logger.debug(
-            f"Worker {self.worker_id}: Sampled opponent from {pool_type} pool (step {step})"
-        )
+                # Check if file exists before attempting load
+                # Protects against race condition where checkpoint was deleted
+                if not os.path.exists(checkpoint_path):
+                    if attempt < max_retries - 1:
+                        self.log(
+                            f"Worker {self.worker_id}: Checkpoint {checkpoint_path} not found "
+                            f"(attempt {attempt + 1}/{max_retries}), retrying..."
+                        )
+                        continue
+                    else:
+                        self.log(
+                            f"Worker {self.worker_id}: Checkpoint not found after {max_retries} attempts, "
+                            f"falling back to self-play"
+                        )
+                        return None
 
-        # Create opponent model
-        from model.hrm import HRM
-        opponent_model = HRM(**self.model_config)
-        opponent_model.to(self.device)
-        opponent_model.eval()
+                # Store for logging
+                self._last_opponent_step = step
 
-        # Load checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        opponent_model.load_state_dict(checkpoint['model_state_dict'])
+                # self.log(
+                #     f"Worker {self.worker_id}: Sampled opponent from {pool_type} pool (step {step})"
+                # )
 
-        # Create MCTS for opponent
-        opponent_mcts = MCTS(opponent_model, self.game_class, self.mcts_config, device=self.device)
+                # Create opponent model
+                from model.hrm import HRM
+                opponent_model = HRM(**self.model_config)
+                opponent_model.to(self.device)
+                opponent_model.eval()
 
-        return opponent_mcts
+                # Load checkpoint (may fail if file is being written)
+                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                opponent_model.load_state_dict(checkpoint['model_state_dict'])
+
+                # Create MCTS for opponent
+                opponent_mcts = MCTS(opponent_model, self.game_class, self.mcts_config, device=self.device)
+
+                return opponent_mcts
+
+            except (FileNotFoundError, RuntimeError, OSError) as e:
+                # Handle race conditions:
+                # - FileNotFoundError: file deleted between existence check and load
+                # - RuntimeError: corrupted checkpoint or incomplete write
+                # - OSError: other file system issues
+                if attempt < max_retries - 1:
+                    self.log(
+                        f"Worker {self.worker_id}: Failed to load checkpoint "
+                        f"(attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
+                    )
+                    continue
+                else:
+                    self.log(
+                        f"Worker {self.worker_id}: All {max_retries} checkpoint load attempts failed, "
+                        f"falling back to self-play"
+                    )
+                    return None
+
+        # Should never reach here, but return None as fallback
+        return None
 
     def get_stats(self) -> Dict:
         """Return worker statistics.

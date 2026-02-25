@@ -202,21 +202,30 @@ class Learner:
         return wdl
 
     def save_checkpoint(self) -> str:
-        """Save model checkpoint and manage checkpoint rotation.
+        """Save model checkpoint atomically and manage checkpoint rotation.
+
+        Uses atomic write (write to temp file, then replace) to prevent workers
+        from loading partially-written checkpoints.
 
         Returns:
             Path to saved checkpoint
         """
         checkpoint_path = self.checkpoint_dir / f"checkpoint_{self.global_step}.pt"
+        temp_path = self.checkpoint_dir / f"checkpoint_{self.global_step}.pt.tmp"
 
-        # Save model state
+        # Save model state to temporary file first
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'global_step': self.global_step,
             'config': self.config
-        }, checkpoint_path)
+        }, temp_path)
+
+        # Atomic replace: moves temp file to final path
+        # On POSIX systems (Linux, macOS), this is atomic
+        # On Windows, requires Python 3.3+ for atomic behavior
+        os.replace(str(temp_path), str(checkpoint_path))
 
         # Track checkpoint
         self.checkpoints_saved.append((str(checkpoint_path), self.global_step))

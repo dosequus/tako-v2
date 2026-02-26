@@ -63,10 +63,11 @@ def test_forward_pass(small_config):
     assert not torch.isnan(policy).any()
     assert not torch.isnan(value).any()
 
-    # Check valid log probabilities (should sum to 1 in probability space)
+    # Check valid log probabilities for policy (should sum to 1 in probability space)
     policy_probs = torch.exp(policy)
-    value_probs = torch.exp(value)
     assert torch.allclose(policy_probs.sum(dim=1), torch.ones(batch_size), atol=1e-5)
+    # Value head returns raw logits; verify softmax sums to 1
+    value_probs = torch.softmax(value, dim=1)
     assert torch.allclose(value_probs.sum(dim=1), torch.ones(batch_size), atol=1e-5)
 
 
@@ -88,7 +89,7 @@ def test_one_step_gradient(small_config):
     target_value = torch.randint(0, 3, (batch_size,))
 
     loss = torch.nn.functional.nll_loss(policy, target_policy) + \
-           torch.nn.functional.nll_loss(value, target_value)
+           torch.nn.functional.cross_entropy(value, target_value)
 
     # Backward pass
     loss.backward()
@@ -98,7 +99,7 @@ def test_one_step_gradient(small_config):
     assert model.L_module.layers[0].q_proj.weight.grad is not None
     assert model.H_module.layers[0].q_proj.weight.grad is not None
     assert model.policy_head.linear.weight.grad is not None
-    assert model.value_head.linear.weight.grad is not None
+    assert model.value_head.fc1.weight.grad is not None
 
     # Check gradient magnitudes are reasonable (not 0, not inf)
     for name, param in model.named_parameters():

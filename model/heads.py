@@ -47,7 +47,8 @@ class ValueHead(nn.Module):
 
     def __init__(self, d_model: int):
         super().__init__()
-        self.linear = nn.Linear(d_model, 3, bias=False)  # Win, Draw, Loss
+        self.fc1 = nn.Linear(d_model, d_model)
+        self.fc2 = nn.Linear(d_model, 3)
 
     def forward(self, z_H: torch.Tensor) -> torch.Tensor:
         """Predict value from H-state.
@@ -56,15 +57,9 @@ class ValueHead(nn.Module):
             z_H: H-module state [batch, seq_len, d_model]
 
         Returns:
-            Log probabilities [batch, 3] for (Win, Draw, Loss)
+            Logits [batch, 3] for (Win, Draw, Loss)
         """
-        # Pool over sequence (mean pooling)
         pooled = z_H.mean(dim=1)  # [batch, d_model]
-
-        # Project to value logits
-        logits = self.linear(pooled)  # [batch, 3]
-
-        # Log softmax
-        log_probs = F.log_softmax(logits, dim=-1)
-
-        return log_probs
+        hidden = F.relu(self.fc1(pooled))  # [batch, d_model]
+        logits = self.fc2(hidden)  # [batch, 3]
+        return logits

@@ -14,10 +14,10 @@ model:
   action_size: 9  # 9 board positions
 
 training:
-  batch_size: 64
-  learning_rate: 0.001
+  batch_size: 128
+  learning_rate: 0.0005
   lr_schedule: cosine
-  lr_min: 0.0001
+  lr_min: 0.00005
   max_segments: 2  # Maximum segments during training (was 10) - TicTacToe needs minimal iterative refinement
   n_supervision: 2  # Number of segments for deep supervision (was 5)
   act_epsilon: 0.15  # Probability of forcing M_min >= 2
@@ -44,9 +44,9 @@ mcts:
 
 selfplay:
   num_workers: 2
-  games_per_worker: 100
-  replay_buffer_size: 10000  # Smaller buffer for simpler game
-  min_buffer_size: 1000  # Start training after this many positions
+  games_per_worker: 500
+  replay_buffer_size: 20000  # Small buffer, fast turnover
+  min_buffer_size: 3000  # Start training after this many positions
 
   # Opponent pool
   opponent_pool_size: 20
@@ -58,6 +58,6 @@ evaluation:
   win_rate_threshold: 0.55  # Accept new checkpoint if > 55% win rate
 
 checkpointing:
-  save_interval: 500  # Learner steps (more frequent for faster game)
+  save_interval: 50  # Learner steps — match fresh data ratio
   keep_checkpoints: 10
   checkpoint_dir: "checkpoints/tictactoe"

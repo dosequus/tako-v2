@@ -220,7 +220,10 @@ def main():
     # Determine number of epochs
     num_epochs = args.epochs if args.epochs is not None else 50  # Default to 50 epochs
 
-    print(f"[Train] Training for {num_epochs} epochs")
+    # Set LR schedule to match actual training duration
+    total_steps = num_epochs * checkpoint_interval
+    learner.set_lr_schedule_steps(total_steps)
+    print(f"[Train] Training for {num_epochs} epochs ({total_steps} steps, save every {checkpoint_interval})")
 
     try:
         for epoch in tqdm(range(1, num_epochs + 1), desc="Epochs", unit="epoch"):

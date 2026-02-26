@@ -44,7 +44,7 @@ mcts:
 
 selfplay:
   num_workers: 2
-  games_per_worker: 500
+  games_per_worker: 200
   replay_buffer_size: 20000  # Small buffer, fast turnover
   min_buffer_size: 3000  # Start training after this many positions
 
@@ -58,6 +58,6 @@ evaluation:
   win_rate_threshold: 0.55  # Accept new checkpoint if > 55% win rate
 
 checkpointing:
-  save_interval: 50  # Learner steps — match fresh data ratio
+  save_interval: 100  # Learner steps per epoch
   keep_checkpoints: 10
   checkpoint_dir: "checkpoints/tictactoe"

@@ -28,7 +28,9 @@ def main():
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Path to checkpoint to evaluate')
     parser.add_argument('--opponent', type=str, default='random',
-                        help='Opponent type: "random" or path to checkpoint')
+                        help='Opponent type: "random", "minimax", or path to checkpoint')
+    parser.add_argument('--minimax-depth', type=int, default=-1,
+                        help='Minimax search depth (-1 = unlimited/exact solve)')
     parser.add_argument('--games', type=int, default=100,
                         help='Number of games to play')
     parser.add_argument('--config', type=str, default='config/othello.yaml',
@@ -72,6 +74,11 @@ def main():
     if args.opponent == 'random':
         print(f"[Eval] Playing {args.games} games vs random player...")
         results = evaluator.vs_random(args.checkpoint, num_games=args.games)
+    elif args.opponent == 'minimax':
+        print(f"[Eval] Playing {args.games} games vs minimax (depth={args.minimax_depth})...")
+        results = evaluator.vs_minimax(
+            args.checkpoint, num_games=args.games, minimax_depth=args.minimax_depth
+        )
     else:
         print(f"[Eval] Playing {args.games} games vs opponent checkpoint...")
         results = evaluator.head_to_head(args.checkpoint, args.opponent, num_games=args.games)
@@ -90,11 +97,19 @@ def main():
     # Sanity check
     if args.opponent == 'random':
         if results['win_rate'] < 0.6:
-            print("\n⚠️  Warning: Win rate vs random is low. Model may need more training.")
+            print("\nWarning: Win rate vs random is low. Model may need more training.")
         elif results['win_rate'] > 0.95:
-            print("\n✓ Excellent: Model dominates random baseline!")
+            print("\nExcellent: Model dominates random baseline!")
         else:
-            print("\n✓ Good: Model is learning.")
+            print("\nGood: Model is learning.")
+    elif args.opponent == 'minimax':
+        non_loss_rate = (results['wins'] + results['draws']) / args.games if args.games > 0 else 0
+        if results['losses'] == 0:
+            print("\nConverged: Model never loses to minimax (optimal play)!")
+        elif non_loss_rate > 0.9:
+            print(f"\nNear-converged: {non_loss_rate:.1%} non-loss rate vs minimax.")
+        else:
+            print(f"\nNot converged: {results['losses']} losses to minimax.")
 
 
 if __name__ == '__main__':

@@ -135,6 +135,7 @@ class MCTS:
             for _ in range(self.simulations):
                 sim_game = copy.deepcopy(game)
                 self._simulate(sim_game, root)
+                root.visit_count += 1
 
         # Extract policy from visit counts
         policy = self._get_policy_target(root, move_num, game.action_size())
@@ -170,6 +171,7 @@ class MCTS:
                     # Terminal state: backup immediately with actual outcome
                     value = sim_game.outcome()
                     self._backup(path, value)
+                    root.visit_count += 1
                 else:
                     # Non-terminal: collect for batch evaluation
                     pending_evals.append((sim_game, node, path))
@@ -189,14 +191,15 @@ class MCTS:
                     legal_moves = sim_game.legal_moves()
                     policy_probs = torch.softmax(policy_logits, dim=0).cpu().numpy()
 
-                    # Add Dirichlet noise at root
-                    if node == root or (path and path[0][0] == root):
+                    # Add Dirichlet noise only when expanding root
+                    if node is root:
                         policy_probs = self._add_dirichlet_noise(policy_probs, legal_moves)
 
                     node.expand(legal_moves, policy_probs)
 
                     # Backup
                     self._backup(path, value)
+                    root.visit_count += 1
 
                 pending_evals.clear()
 
@@ -278,8 +281,8 @@ class MCTS:
             # Expand node with legal moves
             policy_probs = torch.softmax(policy_logits, dim=0).cpu().numpy()
 
-            # Add Dirichlet noise at root for exploration
-            if node == path[0][0] if path else True:  # Root node
+            # Add Dirichlet noise only when expanding root
+            if not path:  # node is root when path is empty
                 policy_probs = self._add_dirichlet_noise(policy_probs, legal_moves)
 
             node.expand(legal_moves, policy_probs)
@@ -317,8 +320,8 @@ class MCTS:
 
             child = node.children[action]
 
-            # Q-value (average value)
-            q_value = child.value()
+            # Q-value: negate because child stores value from child's (opponent's) perspective
+            q_value = -child.value()
 
             # Exploration bonus: c * P(s,a) * sqrt(N(s)) / (1 + N(s,a))
             exploration = (

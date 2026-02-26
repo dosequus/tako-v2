@@ -45,7 +45,7 @@ mcts:
 selfplay:
   num_workers: 2
   games_per_worker: 100
-  replay_buffer_size: 50000  # Smaller buffer for simpler game
+  replay_buffer_size: 10000  # Smaller buffer for simpler game
   min_buffer_size: 1000  # Start training after this many positions
 
   # Opponent pool

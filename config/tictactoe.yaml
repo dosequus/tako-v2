@@ -14,8 +14,8 @@ model:
   action_size: 9  # 9 board positions
 
 training:
-  batch_size: 512
-  learning_rate: 0.0002
+  batch_size: 64
+  learning_rate: 0.001
   lr_schedule: cosine
   lr_min: 0.00002
   max_segments: 2  # Maximum segments during training (was 10) - TicTacToe needs minimal iterative refinement
@@ -33,7 +33,7 @@ training:
   act_weight: 0.1     # γ
 
 mcts:
-  simulations: 25  # Reduced for TicTacToe (was 200) - tiny state space doesn't need 200 sims
+  simulations: 50  # Reduced for TicTacToe (was 200) - tiny state space doesn't need 200 sims
   max_segments_inference: 1  # Only 1 segment during MCTS inference (was hardcoded to 10)
   batch_size: 16  # Batch size for GPU evaluation (Phase 2 optimization)
   puct_c: 1.5
@@ -43,10 +43,10 @@ mcts:
   temperature_threshold: 5  # Lower for shorter games (was 10)
 
 selfplay:
-  num_workers: 8
+  num_workers: 2
   games_per_worker: 100
-  replay_buffer_size: 500000  # Smaller buffer for simpler game
-  min_buffer_size: 5000  # Start training after this many positions
+  replay_buffer_size: 50000  # Smaller buffer for simpler game
+  min_buffer_size: 1000  # Start training after this many positions
 
   # Opponent pool
   opponent_pool_size: 20

@@ -29,18 +29,18 @@ training:
 
   # Loss weights
   policy_weight: 1.0  # α
-  value_weight: 1.0   # β
+  value_weight: 2.0   # β — upweight to improve value head (lagging policy)
   act_weight: 0.1     # γ
 
 mcts:
-  simulations: 50  # Reduced for TicTacToe (was 200) - tiny state space doesn't need 200 sims
-  max_segments_inference: 1  # Only 1 segment during MCTS inference (was hardcoded to 10)
+  simulations: 200  # More sims = cleaner policy/value targets for training
+  max_segments_inference: 1  # Only 1 segment during MCTS inference
   batch_size: 16  # Batch size for GPU evaluation (Phase 2 optimization)
   puct_c: 1.5
-  dirichlet_alpha: 0.3  # Lower for smaller action space (9 vs 64)
+  dirichlet_alpha: 1.0  # Higher for small action space (9 moves) — 10/N rule of thumb
   dirichlet_epsilon: 0.25
   temperature: 1.0
-  temperature_threshold: 5  # Lower for shorter games (was 10)
+  temperature_threshold: 3  # Play greedily earlier for cleaner value signal (games are 5-9 moves)
 
 selfplay:
   use_symmetry: true  # Augment each sample with all 8 D4 symmetries (8x data)

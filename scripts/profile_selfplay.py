@@ -205,7 +205,12 @@ def main():
     model.eval()
 
     if args.optimize:
-        dtype = torch.bfloat16 if device == 'cuda' else None
+        if device == 'cuda' and torch.cuda.is_bf16_supported():
+            dtype = torch.bfloat16
+        elif device == 'cuda':
+            dtype = torch.float16
+        else:
+            dtype = None
         model.optimize_for_inference(use_compile=True, dtype=dtype)
     n_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"Model: {n_params:.1f}M parameters")

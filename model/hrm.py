@@ -100,16 +100,21 @@ class HRM(nn.Module):
         self.register_buffer("z_H_init", z_H_init, persistent=True)
         self.register_buffer("z_L_init", z_L_init, persistent=True)
 
-    def optimize_for_inference(self, use_compile: bool = True, dtype: torch.dtype = torch.bfloat16) -> 'HRM':
+    def optimize_for_inference(self, use_compile: bool = True, dtype: Optional[torch.dtype] = None) -> 'HRM':
         """Optimize model for inference with torch.compile and mixed precision.
 
         Args:
             use_compile: Whether to use torch.compile (default: True)
-            dtype: Target dtype for mixed precision (default: bfloat16)
+            dtype: Target dtype for mixed precision. If None, auto-detects:
+                   bfloat16 on supported CUDA GPUs, float32 otherwise.
 
         Returns:
             Self (for chaining)
         """
+        # Auto-detect dtype if not specified
+        if dtype is None and torch.cuda.is_available():
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+
         # Convert to target dtype
         if dtype is not None:
             self.to(dtype=dtype)

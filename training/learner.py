@@ -131,8 +131,10 @@ class Learner:
 
             # Policy loss (cross-entropy with soft targets from MCTS)
             # policies is already a probability distribution from MCTS visit counts
+            # Use nan_to_num to handle 0 * (-inf) = NaN from masked illegal moves
             policy_log_probs = torch.log_softmax(masked_logits, dim=-1)
-            policy_loss = -torch.sum(policies * policy_log_probs, dim=-1).mean()
+            per_action = policies * policy_log_probs
+            policy_loss = -torch.nan_to_num(per_action, nan=0.0).sum(dim=-1).mean()
 
             # Value loss (cross-entropy with W/D/L targets)
             value_log_probs = torch.log_softmax(value_logits, dim=-1)

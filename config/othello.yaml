@@ -19,7 +19,7 @@ training:
   lr_schedule: cosine
   lr_min: 0.00002
   max_segments: 10  # Maximum segments during training
-  n_supervision: 5  # Number of segments for deep supervision
+  n_supervision: 3  # Segments for deep supervision (reduced from 5 for faster steps)
   act_epsilon: 0.15  # Probability of forcing M_min >= 2
 
   # Optimizer
@@ -35,21 +35,22 @@ training:
 mcts:
   simulations: 400
   puct_c: 1.5
-  dirichlet_alpha: 1.0
+  dirichlet_alpha: 0.15  # 10/N rule: 10/65 ≈ 0.15 for 65-action space
   dirichlet_epsilon: 0.25
   temperature: 1.0
   temperature_threshold: 30  # Move number after which temp → 0
-  batch_size: 16  # Batch size for GPU evaluation (increase for better GPU utilization)
+  batch_size: 32  # Batch size for GPU evaluation (increase for better GPU utilization)
   max_segments_inference: 1  # Number of segments during inference (1 for speed)
 
 selfplay:
-  num_workers: 8
+  use_symmetry: true  # Augment with D4 symmetries (8x data)
+  num_workers: 2
   games_per_worker: 100
   replay_buffer_size: 1000000  # 1M positions
-  min_buffer_size: 10000  # Start training after this many positions
+  min_buffer_size: 50000  # More diverse initial data before training starts
 
   # Opponent pool
-  opponent_pool_size: 10
+  opponent_pool_size: 1
   recent_weight: 0.7  # 70% recent, 30% older checkpoints
 
 evaluation:
@@ -59,5 +60,5 @@ evaluation:
 
 checkpointing:
   save_interval: 1000  # Learner steps
-  keep_checkpoints: 10
+  keep_checkpoints: 1
   checkpoint_dir: "checkpoints/othello"

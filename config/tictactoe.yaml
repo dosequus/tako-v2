@@ -49,8 +49,8 @@ selfplay:
   replay_buffer_size: 20000  # Small buffer, fast turnover
   min_buffer_size: 3000  # Start training after this many positions
 
-  # Opponent pool
-  opponent_pool_size: 20
+  # Opponent pool disabled: only 1 checkpoint kept = pure self-play
+  opponent_pool_size: 1
   recent_weight: 0.7  # 70% recent, 30% older checkpoints
 
 evaluation:
@@ -60,5 +60,5 @@ evaluation:
 
 checkpointing:
   save_interval: 100  # Learner steps per epoch
-  keep_checkpoints: 10
+  keep_checkpoints: 1  # Only keep latest = pure self-play (no opponent pool)
   checkpoint_dir: "checkpoints/tictactoe"

@@ -6,6 +6,24 @@ from typing import List, Optional
 
 from games.base import BaseGame
 
+# D4 symmetry group for 3x3 board: 4 rotations × {identity, reflection} = 8 symmetries
+# Each permutation maps board index i -> permutation[i]
+#
+# Board positions:
+#   0 1 2
+#   3 4 5
+#   6 7 8
+_D4_PERMUTATIONS = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8],  # Identity
+    [6, 3, 0, 7, 4, 1, 8, 5, 2],  # Rot90 CW
+    [8, 7, 6, 5, 4, 3, 2, 1, 0],  # Rot180
+    [2, 5, 8, 1, 4, 7, 0, 3, 6],  # Rot270 CW
+    [6, 7, 8, 3, 4, 5, 0, 1, 2],  # Horizontal reflection (flip rows)
+    [8, 5, 2, 7, 4, 1, 6, 3, 0],  # Hflip + Rot90
+    [2, 1, 0, 5, 4, 3, 8, 7, 6],  # Hflip + Rot180 (vertical reflection)
+    [0, 3, 6, 1, 4, 7, 2, 5, 8],  # Hflip + Rot270 (transpose)
+]
+
 
 class TicTacToeGame(BaseGame):
     """3×3 TicTacToe game environment.
@@ -180,6 +198,24 @@ class TicTacToeGame(BaseGame):
         tokens = torch.cat([board_tokens, player_token])
 
         return tokens
+
+    def get_symmetries(self, state: torch.Tensor, policy: np.ndarray) -> list:
+        """Return all 8 D4 symmetry-augmented versions of (state, policy).
+
+        Permutes the first 9 board tokens and the 9-element policy vector.
+        The player token (index 9) is unchanged.
+        """
+        result = []
+        board_tokens = state[:9].numpy()
+        player_token = state[9:]
+
+        for perm in _D4_PERMUTATIONS:
+            new_board = board_tokens[perm]
+            new_state = torch.cat([torch.from_numpy(new_board), player_token])
+            new_policy = policy[perm]
+            result.append((new_state, new_policy))
+
+        return result
 
     def action_size(self) -> int:
         """Return action space size.

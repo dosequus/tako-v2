@@ -46,7 +46,8 @@ class HRM(nn.Module):
         N: int = 4,
         T: int = 4,
         dropout: float = 0.0,
-        max_seq_len: int = 128
+        max_seq_len: int = 128,
+        optimize: bool = True
     ):
         super().__init__()
 
@@ -77,6 +78,9 @@ class HRM(nn.Module):
         # Fixed initialization for hidden states
         # Truncated normal (std=1, truncated at ±2)
         self._init_hidden_states()
+
+        if optimize:
+            self.optimize_for_inference(dtype=torch.float32)
 
     def _init_hidden_states(self):
         """Initialize fixed z_H and z_L from truncated normal."""

@@ -43,6 +43,7 @@ mcts:
   temperature_threshold: 5  # Lower for shorter games (was 10)
 
 selfplay:
+  use_symmetry: true  # Augment each sample with all 8 D4 symmetries (8x data)
   num_workers: 2
   games_per_worker: 200
   replay_buffer_size: 20000  # Small buffer, fast turnover
@@ -54,7 +55,7 @@ selfplay:
 
 evaluation:
   games: 100
-  mcts_sims: 400  # More sims for evaluation
+  mcts_sims: 800  # More sims for evaluation
   win_rate_threshold: 0.55  # Accept new checkpoint if > 55% win rate
 
 checkpointing:

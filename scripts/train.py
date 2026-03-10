@@ -161,7 +161,8 @@ def main():
             model_config=config['model'],
             mcts_config=config['mcts'],
             opponent_pool_config={'recent_weight': config['selfplay']['recent_weight']},
-            device=worker_device
+            device=worker_device,
+            use_symmetry=config['selfplay'].get('use_symmetry', False)
         )
         cpu_fraction = (os.cpu_count() or 1) / num_workers
         options = {'num_cpus': cpu_fraction}

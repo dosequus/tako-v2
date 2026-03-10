@@ -1,8 +1,9 @@
 """Abstract base class for game environments."""
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Tuple
 import torch
+import numpy as np
 
 
 class BaseGame(ABC):
@@ -77,6 +78,21 @@ class BaseGame(ABC):
             Integer action space size (includes invalid moves)
         """
         pass
+
+    def get_symmetries(self, state: torch.Tensor, policy: np.ndarray) -> List[Tuple[torch.Tensor, np.ndarray]]:
+        """Return symmetry-augmented versions of (state, policy).
+
+        Default: no augmentation (returns the original pair).
+        Override in subclasses for games with board symmetries.
+
+        Args:
+            state: Token tensor from to_tokens()
+            policy: Policy vector (action probabilities)
+
+        Returns:
+            List of (transformed_state, transformed_policy) tuples
+        """
+        return [(state, policy)]
 
     @property
     @abstractmethod

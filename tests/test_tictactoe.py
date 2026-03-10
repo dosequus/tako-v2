@@ -353,6 +353,74 @@ def test_tictactoe_determinism():
     assert game1.current_player == game2.current_player
 
 
+def test_tictactoe_get_symmetries_count():
+    """Test that get_symmetries returns exactly 8 D4 symmetries."""
+    game = TicTacToeGame()
+    game.make_move(0)  # Place X at top-left to break trivial symmetry
+
+    state = game.to_tokens()
+    policy = np.array([0.5, 0.1, 0.05, 0.1, 0.1, 0.05, 0.02, 0.05, 0.03])
+
+    symmetries = game.get_symmetries(state, policy)
+    assert len(symmetries) == 8
+
+
+def test_tictactoe_get_symmetries_distinct():
+    """Test that all 8 symmetries produce distinct (state, policy) pairs."""
+    game = TicTacToeGame()
+    game.make_move(0)  # X at corner
+
+    state = game.to_tokens()
+    # Use a fully asymmetric policy so all 8 pairs are distinct
+    policy = np.array([0.0, 0.3, 0.05, 0.15, 0.1, 0.08, 0.12, 0.07, 0.13])
+
+    symmetries = game.get_symmetries(state, policy)
+
+    # All 8 (state, policy) pairs should be distinct
+    pairs_set = set()
+    for s, p in symmetries:
+        pairs_set.add((tuple(s.tolist()), tuple(np.round(p, 6).tolist())))
+    assert len(pairs_set) == 8
+
+
+def test_tictactoe_get_symmetries_preserves_player_token():
+    """Test that the player token (index 9) is unchanged across symmetries."""
+    game = TicTacToeGame()
+    game.make_move(0)
+    game.make_move(4)
+
+    state = game.to_tokens()
+    policy = np.ones(9) / 9.0
+
+    for s, p in game.get_symmetries(state, policy):
+        assert s[9].item() == state[9].item()
+
+
+def test_tictactoe_get_symmetries_policy_sums():
+    """Test that policy probabilities are preserved (sum to same value)."""
+    game = TicTacToeGame()
+    policy = np.array([0.2, 0.15, 0.1, 0.1, 0.15, 0.05, 0.1, 0.1, 0.05])
+    state = game.to_tokens()
+
+    for s, p in game.get_symmetries(state, policy):
+        np.testing.assert_almost_equal(p.sum(), policy.sum())
+
+
+def test_tictactoe_get_symmetries_identity_first():
+    """Test that the first symmetry is identity (original state/policy)."""
+    game = TicTacToeGame()
+    game.make_move(0)
+
+    state = game.to_tokens()
+    policy = np.array([0.0, 0.2, 0.1, 0.1, 0.3, 0.1, 0.05, 0.1, 0.05])
+
+    symmetries = game.get_symmetries(state, policy)
+    s0, p0 = symmetries[0]
+
+    assert torch.equal(s0, state)
+    np.testing.assert_array_equal(p0, policy)
+
+
 def test_tictactoe_all_positions():
     """Test that all 9 positions can be played."""
     game = TicTacToeGame()

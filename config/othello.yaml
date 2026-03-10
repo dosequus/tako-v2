@@ -49,7 +49,7 @@ selfplay:
   min_buffer_size: 10000  # Start training after this many positions
 
   # Opponent pool
-  opponent_pool_size: 20
+  opponent_pool_size: 10
   recent_weight: 0.7  # 70% recent, 30% older checkpoints
 
 evaluation:

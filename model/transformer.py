@@ -204,22 +204,22 @@ class TransformerBlock(nn.Module):
 
         # FlashAttention (uses flash attention 2/3 if available in PyTorch 2.0+)
         # Use scaled_dot_product_attention if available, otherwise fallback
-        if hasattr(F, 'scaled_dot_product_attention'):
-            attn_output = F.scaled_dot_product_attention(
-                q, k, v,
-                attn_mask=attn_mask,
-                dropout_p=self.dropout_p if self.training else 0.0,
-                is_causal=False
-            )
-        else:
-            # Fallback for older PyTorch versions
-            scale = 1.0 / math.sqrt(self.head_dim)
-            attn_scores = torch.matmul(q, k.transpose(-2, -1)) * scale
-            if attn_mask is not None:
-                attn_scores = attn_scores + attn_mask
-            attn_probs = F.softmax(attn_scores, dim=-1)
-            attn_probs = self.dropout(attn_probs)
-            attn_output = torch.matmul(attn_probs, v)
+        # if hasattr(F, 'scaled_dot_product_attention'):
+        attn_output = F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=attn_mask,
+            dropout_p=self.dropout_p if self.training else 0.0,
+            is_causal=False
+        )
+        # else:
+        #     # Fallback for older PyTorch versions
+        #     scale = 1.0 / math.sqrt(self.head_dim)
+        #     attn_scores = torch.matmul(q, k.transpose(-2, -1)) * scale
+        #     if attn_mask is not None:
+        #         attn_scores = attn_scores + attn_mask
+        #     attn_probs = F.softmax(attn_scores, dim=-1)
+        #     attn_probs = self.dropout(attn_probs)
+        #     attn_output = torch.matmul(attn_probs, v)
 
         # Reshape and project: [batch, seq_len, d_model]
         attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)

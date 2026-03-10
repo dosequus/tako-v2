@@ -33,7 +33,8 @@ class SelfPlayWorker:
         model_config: Dict,
         mcts_config: Dict,
         opponent_pool_config: Dict,
-        device: str = 'cpu'
+        device: str = 'cpu',
+        use_symmetry: bool = False
     ):
         """Initialize self-play worker.
 
@@ -44,6 +45,7 @@ class SelfPlayWorker:
             mcts_config: MCTS configuration dict
             opponent_pool_config: Opponent pool config with 'recent_weight'
             device: Device for inference (default: 'cpu')
+            use_symmetry: Whether to augment samples with game symmetries
         """
         self.worker_id = worker_id
         self.game_class = game_class
@@ -51,6 +53,7 @@ class SelfPlayWorker:
         self.mcts_config = mcts_config
         self.recent_weight = opponent_pool_config['recent_weight']
         self.device = device
+        self.use_symmetry = use_symmetry
 
         # Import HRM here (inside Ray worker)
         from model.hrm import HRM
@@ -188,6 +191,19 @@ class SelfPlayWorker:
             # Remove temporary fields
             del sample['move_num']
             del sample['player']
+
+        # Apply symmetry augmentation
+        if self.use_symmetry:
+            augmented = []
+            game_instance = self.game_class()
+            for sample in samples:
+                for sym_state, sym_policy in game_instance.get_symmetries(sample['state'], sample['policy']):
+                    augmented.append({
+                        'state': sym_state,
+                        'policy': sym_policy,
+                        'value': sample['value']
+                    })
+            samples = augmented
 
         # Log game result
         outcome_str = {1.0: "WIN", 0.0: "DRAW", -1.0: "LOSS"}[final_outcome]

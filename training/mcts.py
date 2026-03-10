@@ -185,12 +185,12 @@ class MCTS:
                 # Expand and backup each node
                 for (sim_game, node, path), (policy_logits, value_logits) in zip(pending_evals, eval_results):
                     # Convert value logits to expected value
-                    value_probs = torch.softmax(value_logits, dim=0)
+                    value_probs = torch.softmax(value_logits.float(), dim=0)
                     value = float(value_probs[0] * 1.0 + value_probs[1] * 0.0 + value_probs[2] * (-1.0))
 
                     # Expand node
                     legal_moves = sim_game.legal_moves()
-                    policy_probs = torch.softmax(policy_logits, dim=0).cpu().numpy()
+                    policy_probs = torch.softmax(policy_logits.float(), dim=0).cpu().numpy()
 
                     # Add Dirichlet noise only when expanding root
                     if node is root:
@@ -275,12 +275,12 @@ class MCTS:
 
             # Convert value logits to expected value
             # value_logits is [3] for W/D/L probabilities (log probs)
-            value_probs = torch.softmax(value_logits, dim=0)
+            value_probs = torch.softmax(value_logits.float(), dim=0)
             # W=+1, D=0, L=-1
             value = float(value_probs[0] * 1.0 + value_probs[1] * 0.0 + value_probs[2] * (-1.0))
 
             # Expand node with legal moves
-            policy_probs = torch.softmax(policy_logits, dim=0).cpu().numpy()
+            policy_probs = torch.softmax(policy_logits.float(), dim=0).cpu().numpy()
 
             # Add Dirichlet noise only when expanding root
             if not path:  # node is root when path is empty

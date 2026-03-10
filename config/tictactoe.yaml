@@ -45,7 +45,7 @@ mcts:
 selfplay:
   use_symmetry: true  # Augment each sample with all 8 D4 symmetries (8x data)
   num_workers: 2
-  games_per_worker: 200
+  games_per_worker: 50
   replay_buffer_size: 20000  # Small buffer, fast turnover
   min_buffer_size: 3000  # Start training after this many positions
 

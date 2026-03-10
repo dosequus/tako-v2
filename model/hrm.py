@@ -121,8 +121,8 @@ class HRM(nn.Module):
             # This gives better control and avoids issues with dynamic behavior
             try:
                 torch.set_float32_matmul_precision('high')
-                self.forward = torch.compile(self.forward, mode='reduce-overhead')
-                print("✅ torch.compile enabled (mode='reduce-overhead')")
+                self.forward = torch.compile(self.forward, mode='default')
+                print("✅ torch.compile enabled (mode='default')")
             except Exception as e:
                 print(f"⚠️  torch.compile failed: {e}")
 

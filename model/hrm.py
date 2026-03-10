@@ -120,6 +120,7 @@ class HRM(nn.Module):
             # Note: We compile the forward method, not the entire module
             # This gives better control and avoids issues with dynamic behavior
             try:
+                torch.set_float32_matmul_precision('high')
                 self.forward = torch.compile(self.forward, mode='reduce-overhead')
                 print("✅ torch.compile enabled (mode='reduce-overhead')")
             except Exception as e:

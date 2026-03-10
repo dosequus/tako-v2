@@ -43,6 +43,9 @@ def main():
                         help='Path to checkpoint to resume from')
     parser.add_argument('--epochs', type=int, default=None,
                         help='Number of epochs to train (overrides config)')
+    parser.add_argument('--optimize', action=argparse.BooleanOptionalAction,
+                        default=None,
+                        help='Enable model optimization (torch.compile + bfloat16), overrides config')
     args = parser.parse_args()
 
     # Load config
@@ -64,7 +67,6 @@ def main():
     # Override config with CLI args
     if args.num_workers is not None:
         config['selfplay']['num_workers'] = args.num_workers
-
     num_workers = config['selfplay']['num_workers']
     games_per_worker = config['selfplay']['games_per_worker']
     print(f"[Train] Workers: {num_workers}")
@@ -111,6 +113,10 @@ def main():
         print("[Train] Ray initialized")
         print(f"[Train] View worker logs in the dashboard under 'Actors' tab")
         print(f"[Train] Note: VIRTUAL_ENV warning from Ray/uv is harmless and can be ignored")
+
+    # Override model optimize flag from CLI
+    if args.optimize is not None:
+        config['model']['optimize'] = args.optimize
 
     # Create model
     model = HRM(**config['model'])

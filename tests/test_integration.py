@@ -72,7 +72,8 @@ def test_full_training_step(config):
         samples = [{
             'state': torch.randint(0, 5, (65,)),
             'policy': np.random.dirichlet([1.0] * 65),
-            'value': np.random.choice([-1.0, 0.0, 1.0])
+            'value': np.random.choice([-1.0, 0.0, 1.0]),
+            'legal_mask': np.ones(65, dtype=bool),
         }]
         replay_buffer.add_samples(samples)
 
@@ -109,7 +110,8 @@ def test_loss_decreases_on_synthetic_data(config):
         samples = [{
             'state': torch.randint(0, 5, (65,)),
             'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0  # Fixed value
+            'value': 1.0,  # Fixed value
+            'legal_mask': np.ones(65, dtype=bool),
         }]
         replay_buffer.add_samples(samples)
 
@@ -181,7 +183,8 @@ def test_opponent_pool_management(config):
         samples = [{
             'state': torch.randint(0, 5, (65,)),
             'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }]
         replay_buffer.add_samples(samples)
 
@@ -250,7 +253,8 @@ def test_value_to_wdl_conversion(config):
         samples = [{
             'state': torch.randint(0, 5, (65,)),
             'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }]
         replay_buffer.add_samples(samples)
 
@@ -284,12 +288,13 @@ def test_batch_shapes(config):
         samples = [{
             'state': torch.randint(0, 5, (65,)),
             'policy': np.random.dirichlet([1.0] * 65),
-            'value': np.random.choice([-1.0, 0.0, 1.0])
+            'value': np.random.choice([-1.0, 0.0, 1.0]),
+            'legal_mask': np.ones(65, dtype=bool),
         }]
         replay_buffer.add_samples(samples)
 
     # Sample batch
-    states, policies, values = replay_buffer.sample_batch(batch_size)
+    states, policies, values, legal_masks = replay_buffer.sample_batch(batch_size)
 
     # Check shapes
     assert states.shape[0] == batch_size

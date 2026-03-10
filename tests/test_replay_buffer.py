@@ -7,6 +7,18 @@ import numpy as np
 from training.replay_buffer import ReplayBuffer
 
 
+def _make_sample(state_len=65, action_size=65, value=1.0):
+    """Helper to create a valid sample dict."""
+    legal_mask = np.random.randint(0, 2, size=action_size).astype(bool)
+    legal_mask[0] = True  # ensure at least one legal move
+    return {
+        'state': torch.randint(0, 5, (state_len,)),
+        'policy': np.random.dirichlet([1.0] * action_size),
+        'value': value,
+        'legal_mask': legal_mask,
+    }
+
+
 @pytest.fixture
 def buffer():
     """Create a small replay buffer for testing."""
@@ -23,14 +35,7 @@ def test_replay_buffer_init(buffer):
 
 def test_add_samples(buffer):
     """Test adding samples to buffer."""
-    samples = [
-        {
-            'state': torch.randint(0, 5, (65,)),
-            'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0
-        }
-        for _ in range(5)
-    ]
+    samples = [_make_sample() for _ in range(5)]
 
     buffer.add_samples(samples)
 
@@ -43,11 +48,7 @@ def test_buffer_ready_check(buffer):
     # Add samples until ready
     for _ in range(2):
         samples = [
-            {
-                'state': torch.randint(0, 5, (65,)),
-                'policy': np.random.dirichlet([1.0] * 65),
-                'value': np.random.choice([-1.0, 0.0, 1.0])
-            }
+            _make_sample(value=np.random.choice([-1.0, 0.0, 1.0]))
             for _ in range(5)
         ]
         buffer.add_samples(samples)
@@ -65,7 +66,8 @@ def test_circular_buffer_overwrite():
         buffer.add_samples([{
             'state': torch.tensor([i], dtype=torch.long),
             'policy': np.ones(65) / 65,
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }])
 
     assert len(buffer) == 5
@@ -75,7 +77,8 @@ def test_circular_buffer_overwrite():
         buffer.add_samples([{
             'state': torch.tensor([i], dtype=torch.long),
             'policy': np.ones(65) / 65,
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }])
 
     # Buffer size should stay at capacity
@@ -89,22 +92,20 @@ def test_sample_batch(buffer):
     """Test batch sampling."""
     # Add samples
     samples = [
-        {
-            'state': torch.randint(0, 5, (65,)),
-            'policy': np.random.dirichlet([1.0] * 65),
-            'value': np.random.choice([-1.0, 0.0, 1.0])
-        }
+        _make_sample(value=np.random.choice([-1.0, 0.0, 1.0]))
         for _ in range(20)
     ]
     buffer.add_samples(samples)
 
     # Sample batch
-    states, policies, values = buffer.sample_batch(batch_size=10)
+    states, policies, values, legal_masks = buffer.sample_batch(batch_size=10)
 
     # Check shapes
     assert states.shape[0] == 10
     assert policies.shape == (10, 65)
     assert values.shape == (10,)
+    assert legal_masks.shape == (10, 65)
+    assert legal_masks.dtype == torch.bool
 
     # Check values are valid
     assert torch.all((values == -1.0) | (values == 0.0) | (values == 1.0))
@@ -113,14 +114,7 @@ def test_sample_batch(buffer):
 
 def test_sample_batch_too_large(buffer):
     """Test that sampling larger than buffer raises error."""
-    samples = [
-        {
-            'state': torch.randint(0, 5, (65,)),
-            'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0
-        }
-        for _ in range(5)
-    ]
+    samples = [_make_sample() for _ in range(5)]
     buffer.add_samples(samples)
 
     with pytest.raises(ValueError):
@@ -137,14 +131,7 @@ def test_buffer_stats(buffer):
     assert not stats['ready']
 
     # Add some samples
-    samples = [
-        {
-            'state': torch.randint(0, 5, (65,)),
-            'policy': np.random.dirichlet([1.0] * 65),
-            'value': 1.0
-        }
-        for _ in range(50)
-    ]
+    samples = [_make_sample() for _ in range(50)]
     buffer.add_samples(samples)
 
     stats = buffer.stats()
@@ -156,20 +143,12 @@ def test_buffer_stats(buffer):
 def test_value_validation(buffer):
     """Test that invalid values are rejected."""
     # Valid values should work
-    valid_sample = {
-        'state': torch.randint(0, 5, (65,)),
-        'policy': np.random.dirichlet([1.0] * 65),
-        'value': 1.0
-    }
-    buffer.add_samples([valid_sample])
+    buffer.add_samples([_make_sample(value=1.0)])
     assert len(buffer) == 1
 
     # Invalid value should raise assertion
-    invalid_sample = {
-        'state': torch.randint(0, 5, (65,)),
-        'policy': np.random.dirichlet([1.0] * 65),
-        'value': 0.5  # Invalid: not in {-1, 0, 1}
-    }
+    invalid_sample = _make_sample(value=0.5)
+    invalid_sample['value'] = 0.5  # Override after creation
     with pytest.raises(AssertionError):
         buffer.add_samples([invalid_sample])
 
@@ -181,7 +160,8 @@ def test_uniform_sampling_distribution(buffer):
         {
             'state': torch.tensor([i] * 65, dtype=torch.long),
             'policy': np.ones(65) / 65,
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }
         for i in range(100)
     ]
@@ -192,7 +172,7 @@ def test_uniform_sampling_distribution(buffer):
     num_samples = 1000
 
     for _ in range(num_samples):
-        states, _, _ = buffer.sample_batch(batch_size=1)
+        states, _, _, _ = buffer.sample_batch(batch_size=1)
         state_id = states[0, 0].item()
         sample_counts[state_id] = sample_counts.get(state_id, 0) + 1
 
@@ -212,19 +192,45 @@ def test_padding_variable_length_states():
         {
             'state': torch.randint(0, 5, (50,)),  # Short
             'policy': np.ones(65) / 65,
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         },
         {
             'state': torch.randint(0, 5, (65,)),  # Long
             'policy': np.ones(65) / 65,
-            'value': 1.0
+            'value': 1.0,
+            'legal_mask': np.ones(65, dtype=bool),
         }
     ]
     buffer.add_samples(samples)
 
     # Sample batch
-    states, _, _ = buffer.sample_batch(batch_size=2)
+    states, _, _, _ = buffer.sample_batch(batch_size=2)
 
     # All states should be padded to same length
     assert states.shape[0] == 2
     assert states.shape[1] == 65  # Max length
+
+
+def test_legal_mask_stored_correctly():
+    """Test that legal masks are stored and returned correctly."""
+    buffer = ReplayBuffer(capacity=10, min_size=1)
+
+    # Create a specific legal mask
+    legal_mask = np.zeros(65, dtype=bool)
+    legal_mask[[0, 5, 10]] = True  # Only 3 legal moves
+
+    buffer.add_samples([{
+        'state': torch.randint(0, 5, (65,)),
+        'policy': np.random.dirichlet([1.0] * 65),
+        'value': 1.0,
+        'legal_mask': legal_mask,
+    }])
+
+    _, _, _, masks = buffer.sample_batch(batch_size=1)
+    assert masks.shape == (1, 65)
+    assert masks.dtype == torch.bool
+    assert masks[0, 0].item() is True
+    assert masks[0, 5].item() is True
+    assert masks[0, 10].item() is True
+    assert masks[0, 1].item() is False

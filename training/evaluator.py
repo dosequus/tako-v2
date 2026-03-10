@@ -23,7 +23,8 @@ class Evaluator:
         self,
         game_class,
         mcts_config: Dict,
-        device: str = 'cpu'
+        device: str = 'cpu',
+        optimize: bool = False
     ):
         """Initialize evaluator.
 
@@ -31,10 +32,26 @@ class Evaluator:
             game_class: Game class (e.g., OthelloGame)
             mcts_config: MCTS configuration dict
             device: Device for inference ('cpu' or 'cuda')
+            optimize: Whether to apply optimize_for_inference (torch.compile + bfloat16)
         """
         self.game_class = game_class
         self.mcts_config = mcts_config
         self.device = device
+        self.optimize = optimize  # None = use config default, True/False = override
+
+    def _load_model(self, checkpoint_path: str):
+        """Load model from checkpoint, applying optimize override if set."""
+        from model.hrm import HRM
+
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        model_config = checkpoint['config']['model']
+        if self.optimize is not None:
+            model_config = {**model_config, 'optimize': self.optimize}
+        model = HRM(**model_config)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(self.device)
+        model.eval()
+        return model
 
     def head_to_head(
         self,
@@ -56,24 +73,13 @@ class Evaluator:
                 - draws: Number of draws
                 - win_rate: Win rate (wins / total games)
         """
-        from model.hrm import HRM
-
         # Load model 1
-        checkpoint1 = torch.load(model1_path, map_location=self.device)
-        model1 = HRM(**checkpoint1['config']['model'])
-        model1.load_state_dict(checkpoint1['model_state_dict'])
-        model1.to(self.device)
-        model1.eval()
-
+        model1 = self._load_model(model1_path)
         mcts1 = MCTS(model1, self.game_class, self.mcts_config, device=self.device)
 
         # Load model 2 (or use model1 for self-play)
         if model2_path is not None:
-            checkpoint2 = torch.load(model2_path, map_location=self.device)
-            model2 = HRM(**checkpoint2['config']['model'])
-            model2.load_state_dict(checkpoint2['model_state_dict'])
-            model2.to(self.device)
-            model2.eval()
+            model2 = self._load_model(model2_path)
             mcts2 = MCTS(model2, self.game_class, self.mcts_config, device=self.device)
         else:
             mcts2 = mcts1
@@ -127,15 +133,8 @@ class Evaluator:
         Returns:
             Dict with win rate statistics
         """
-        from model.hrm import HRM
-
         # Load model
-        checkpoint = torch.load(model_path, map_location=self.device)
-        model = HRM(**checkpoint['config']['model'])
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(self.device)
-        model.eval()
-
+        model = self._load_model(model_path)
         mcts = MCTS(model, self.game_class, self.mcts_config, device=self.device)
 
         # Play against random
@@ -193,14 +192,7 @@ class Evaluator:
         Returns:
             Dict with win rate statistics
         """
-        from model.hrm import HRM
-
-        checkpoint = torch.load(model_path, map_location=self.device)
-        model = HRM(**checkpoint['config']['model'])
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(self.device)
-        model.eval()
-
+        model = self._load_model(model_path)
         mcts = MCTS(model, self.game_class, self.mcts_config, device=self.device)
         minimax = MinimaxPlayer(max_depth=minimax_depth)
 

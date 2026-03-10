@@ -9,7 +9,7 @@ import random
 class ReplayBuffer:
     """Circular buffer for storing self-play game samples.
 
-    Stores (state, policy, value) tuples from self-play games.
+    Stores (state, policy, value, legal_mask) tuples from self-play games.
     Implements uniform random sampling for training batches.
 
     Attributes:
@@ -18,6 +18,7 @@ class ReplayBuffer:
         states: List of tokenized game states
         policies: List of MCTS policy targets
         values: List of game outcomes
+        legal_masks: List of boolean legal move masks
     """
 
     def __init__(self, capacity: int, min_size: int):
@@ -34,6 +35,7 @@ class ReplayBuffer:
         self.states: List[torch.Tensor] = []
         self.policies: List[np.ndarray] = []
         self.values: List[float] = []
+        self.legal_masks: List[np.ndarray] = []
 
         self._write_pos = 0  # Position for circular buffer writes
 
@@ -47,28 +49,34 @@ class ReplayBuffer:
                 - 'state': torch.Tensor of tokens [seq_len]
                 - 'policy': np.ndarray of visit counts [action_size]
                 - 'value': float in {-1.0, 0.0, 1.0}
+                - 'legal_mask': np.ndarray boolean mask [action_size]
         """
         for sample in samples:
             state = sample['state']
             policy = sample['policy']
             value = sample['value']
+            legal_mask = sample['legal_mask']
 
             # Validate
             assert isinstance(state, torch.Tensor), "State must be a torch.Tensor"
             assert isinstance(policy, np.ndarray), "Policy must be a numpy array"
             assert isinstance(value, (int, float)), "Value must be a number"
             assert value in [-1.0, 0.0, 1.0], f"Value must be in {{-1, 0, 1}}, got {value}"
+            assert isinstance(legal_mask, np.ndarray), "Legal mask must be a numpy array"
+            assert legal_mask.shape == policy.shape, "Legal mask must match policy shape"
 
             if len(self.states) < self.capacity:
                 # Buffer not full yet: append
                 self.states.append(state)
                 self.policies.append(policy)
                 self.values.append(value)
+                self.legal_masks.append(legal_mask)
             else:
                 # Buffer full: overwrite oldest (circular)
                 self.states[self._write_pos] = state
                 self.policies[self._write_pos] = policy
                 self.values[self._write_pos] = value
+                self.legal_masks[self._write_pos] = legal_mask
 
                 # Advance write position (circular)
                 self._write_pos = (self._write_pos + 1) % self.capacity
@@ -76,17 +84,18 @@ class ReplayBuffer:
     def sample_batch(
         self,
         batch_size: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample a random batch for training.
 
         Args:
             batch_size: Number of samples to draw
 
         Returns:
-            Tuple of (states, policies, values):
+            Tuple of (states, policies, values, legal_masks):
                 - states: [batch_size, seq_len] tensor
                 - policies: [batch_size, action_size] tensor
                 - values: [batch_size] tensor
+                - legal_masks: [batch_size, action_size] bool tensor
         """
         if len(self.states) < batch_size:
             raise ValueError(
@@ -100,6 +109,7 @@ class ReplayBuffer:
         batch_states = [self.states[i] for i in indices]
         batch_policies = [self.policies[i] for i in indices]
         batch_values = [self.values[i] for i in indices]
+        batch_legal_masks = [self.legal_masks[i] for i in indices]
 
         # Stack into tensors
         # States: pad to max length in batch
@@ -115,8 +125,9 @@ class ReplayBuffer:
         states_tensor = torch.stack(states_padded)  # [batch_size, seq_len]
         policies_tensor = torch.from_numpy(np.stack(batch_policies)).float()  # [batch_size, action_size]
         values_tensor = torch.tensor(batch_values, dtype=torch.float32)  # [batch_size]
+        legal_masks_tensor = torch.from_numpy(np.stack(batch_legal_masks)).bool()  # [batch_size, action_size]
 
-        return states_tensor, policies_tensor, values_tensor
+        return states_tensor, policies_tensor, values_tensor, legal_masks_tensor
 
     def ready(self) -> bool:
         """Check if buffer has enough samples to start training.

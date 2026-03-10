@@ -103,6 +103,7 @@ class MCTS:
         self.temperature_threshold = config['temperature_threshold']
         self.max_segments_inference = config.get('max_segments_inference', 1)  # Default to 1
         self.batch_size = config.get('batch_size', 16)  # Batch size for GPU evaluation (default: 16)
+        self.mask_legal_moves = config.get('mask_legal_moves', True)
         self.device = device
 
         # Move model to device
@@ -436,6 +437,13 @@ class MCTS:
         policy_logits = policy_logits.squeeze(0)  # [action_size]
         value_logits = value_logits.squeeze(0)    # [3]
 
+        # Mask illegal moves before softmax so priors concentrate on legal moves
+        if self.mask_legal_moves:
+            legal_moves = game.legal_moves()
+            mask = torch.full_like(policy_logits, float('-inf'))
+            mask[legal_moves] = 0.0
+            policy_logits = policy_logits + mask
+
         return policy_logits, value_logits
 
     @torch.no_grad()
@@ -467,6 +475,14 @@ class MCTS:
         for i in range(len(games)):
             policy_logits = policy_logits_batch[i]  # [action_size]
             value_logits = value_logits_batch[i]    # [3]
+
+            # Mask illegal moves before softmax
+            if self.mask_legal_moves:
+                legal_moves = games[i].legal_moves()
+                mask = torch.full_like(policy_logits, float('-inf'))
+                mask[legal_moves] = 0.0
+                policy_logits = policy_logits + mask
+
             results.append((policy_logits, value_logits))
 
         return results

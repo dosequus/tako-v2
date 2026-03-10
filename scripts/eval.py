@@ -37,6 +37,9 @@ def main():
                         help='Path to config file (for MCTS settings)')
     parser.add_argument('--device', type=str, default='cpu',
                         help='Device for inference (cpu/cuda)')
+    parser.add_argument('--optimize', action=argparse.BooleanOptionalAction,
+                        default=None,
+                        help='Enable model optimization (torch.compile + bfloat16), overrides config')
     args = parser.parse_args()
 
     print(f"[Eval] Evaluating checkpoint: {args.checkpoint}")
@@ -67,7 +70,8 @@ def main():
     evaluator = Evaluator(
         game_class=game_class,
         mcts_config=mcts_config,
-        device=args.device
+        device=args.device,
+        optimize=args.optimize,
     )
 
     # Run evaluation

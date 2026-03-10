@@ -49,6 +49,7 @@ class Learner:
         self.value_weight = train_cfg['value_weight']
         self.act_weight = train_cfg['act_weight']
         self.grad_clip = train_cfg['grad_clip']
+        self.mask_legal_moves = train_cfg.get('mask_legal_moves', True)
 
         # Checkpointing config
         ckpt_cfg = config['checkpointing']
@@ -96,12 +97,13 @@ class Learner:
             raise RuntimeError("Replay buffer not ready for training")
 
         # Sample batch
-        states, policies, values = self.replay_buffer.sample_batch(self.batch_size)
+        states, policies, values, legal_masks = self.replay_buffer.sample_batch(self.batch_size)
 
         # Move to device
         states = states.to(self.device)
         policies = policies.to(self.device)
         values = values.to(self.device)
+        legal_masks = legal_masks.to(self.device)
 
         # Convert value scalars to W/D/L distributions
         value_targets = self._value_to_wdl(values)  # [batch_size, 3]
@@ -120,14 +122,16 @@ class Learner:
             # Run one segment (forward pass)
             (z_H, z_L), policy_logits, value_logits = self.model(states, z=(z_H, z_L))
 
-            # Mask illegal moves in policy loss
-            # For now, we don't have legal move masks in the buffer
-            # So we'll just use the full policy
-            # TODO: Consider adding legal move masks to replay buffer
+            # Optionally mask illegal moves: set logits to -inf before softmax
+            if self.mask_legal_moves:
+                masked_logits = policy_logits.clone()
+                masked_logits[~legal_masks] = float('-inf')
+            else:
+                masked_logits = policy_logits
 
             # Policy loss (cross-entropy with soft targets from MCTS)
             # policies is already a probability distribution from MCTS visit counts
-            policy_log_probs = torch.log_softmax(policy_logits, dim=-1)
+            policy_log_probs = torch.log_softmax(masked_logits, dim=-1)
             policy_loss = -torch.sum(policies * policy_log_probs, dim=-1).mean()
 
             # Value loss (cross-entropy with W/D/L targets)

@@ -154,9 +154,15 @@ class SelfPlayWorker:
 
             # Save sample (only from current model's perspective)
             if is_current_model:
+                # Build legal move mask
+                legal_moves = game.legal_moves()
+                legal_mask = np.zeros(game.action_size(), dtype=bool)
+                legal_mask[legal_moves] = True
+
                 samples.append({
                     'state': game.to_tokens().clone(),
                     'policy': policy.copy(),
+                    'legal_mask': legal_mask,
                     'move_num': move_num,
                     'player': game.current_player
                 })
@@ -197,10 +203,14 @@ class SelfPlayWorker:
             augmented = []
             game_instance = self.game_class()
             for sample in samples:
-                for sym_state, sym_policy in game_instance.get_symmetries(sample['state'], sample['policy']):
+                sym_policies = game_instance.get_symmetries(sample['state'], sample['policy'])
+                # legal_mask has same action layout as policy, so same permutation applies
+                sym_masks = game_instance.get_symmetries(sample['state'], sample['legal_mask'].astype(np.float64))
+                for (sym_state, sym_policy), (_, sym_legal_mask) in zip(sym_policies, sym_masks):
                     augmented.append({
                         'state': sym_state,
                         'policy': sym_policy,
+                        'legal_mask': sym_legal_mask.astype(bool),
                         'value': sample['value']
                     })
             samples = augmented

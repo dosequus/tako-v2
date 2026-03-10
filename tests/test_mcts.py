@@ -180,8 +180,10 @@ def test_mcts_evaluation_integration(mcts):
     assert policy_logits.shape == (65,)
     assert value_logits.shape == (3,)
 
-    # Check values are finite
-    assert torch.all(torch.isfinite(policy_logits))
+    # Illegal moves are masked to -inf; legal moves should be finite
+    legal_moves = game.legal_moves()
+    for move in legal_moves:
+        assert torch.isfinite(policy_logits[move]), f"Legal move {move} has non-finite logit"
     assert torch.all(torch.isfinite(value_logits))
 
 

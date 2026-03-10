@@ -29,13 +29,10 @@ class PolicyHead(nn.Module):
         # Pool over sequence (mean pooling)
         pooled = z_H.mean(dim=1)  # [batch, d_model]
 
-        # Project to action logits
+        # Project to action logits (raw, unnormalized)
         logits = self.linear(pooled)  # [batch, action_size]
 
-        # Log softmax
-        log_probs = F.log_softmax(logits, dim=-1)
-
-        return log_probs
+        return logits
 
 
 class ValueHead(nn.Module):

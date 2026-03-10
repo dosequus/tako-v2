@@ -63,8 +63,8 @@ def test_forward_pass(small_config):
     assert not torch.isnan(policy).any()
     assert not torch.isnan(value).any()
 
-    # Check valid log probabilities for policy (should sum to 1 in probability space)
-    policy_probs = torch.exp(policy)
+    # Policy head returns raw logits; verify softmax produces valid probabilities
+    policy_probs = torch.softmax(policy, dim=-1)
     assert torch.allclose(policy_probs.sum(dim=1), torch.ones(batch_size), atol=1e-5)
     # Value head returns raw logits; verify softmax sums to 1
     value_probs = torch.softmax(value, dim=1)
